@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>賞味期限管理</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ============================================================ 作業する人 -->
+<section id="who" class="screen hidden">
+  <div class="card setup-card">
+    <h1>賞味期限管理</h1>
+    <p class="muted">作業する人を選んでください。登録した人としてシートに残ります。</p>
+
+    <div id="whoRecent" class="who-list hidden"></div>
+
+    <label>名前
+      <input id="whoName" type="text" autocomplete="off" enterkeyhint="go" placeholder="例: 山田">
+    </label>
+
+    <button id="whoGo" class="primary big">始める</button>
+    <p id="whoMsg" class="msg"></p>
+    <p id="whoTarget" class="muted small"></p>
+  </div>
+</section>
+
+<!-- ======================================= 接続先の入力（config.js が空のときだけ出る） -->
+<section id="setup" class="screen hidden">
+  <div class="card setup-card">
+    <h1>賞味期限管理</h1>
+    <p class="muted">
+      接続先が決まっていません。この端末だけの設定として登録します。
+      入力した内容はこの端末のブラウザにだけ保存され、どこにも送信されません。
+    </p>
+
+    <label>接続URL
+      <input id="cfgUrl" type="url" inputmode="url" autocomplete="off"
+             placeholder="https://script.google.com/macros/s/.../exec">
+    </label>
+    <label>パスコード
+      <input id="cfgPass" type="password" autocomplete="off" placeholder="担当者に配られたパスコード">
+    </label>
+    <label>担当者名
+      <input id="cfgUser" type="text" autocomplete="off" placeholder="例: 山田">
+    </label>
+
+    <button id="cfgSave" class="primary big">接続して始める</button>
+    <p id="cfgMsg" class="msg"></p>
+  </div>
+</section>
+
+<!-- ============================================================ 本体 -->
+<section id="main" class="screen hidden">
+
+  <header class="topbar">
+    <nav class="tabs">
+      <button class="tab active" data-tab="scan">登録</button>
+      <button class="tab" data-tab="list">一覧</button>
+    </nav>
+    <button id="openSettings" class="icon" title="設定" aria-label="設定">⚙</button>
+  </header>
+
+  <!-- -------------------------------------------------- 登録タブ -->
+  <div id="tab-scan" class="tabpanel">
+
+    <div class="card">
+      <label class="jan-label">JANコード
+        <span class="muted small">バーコードを読む / USBリーダー / 手入力</span>
+      </label>
+      <div class="row">
+        <input id="jan" type="text" inputmode="numeric" autocomplete="off"
+               enterkeyhint="search" placeholder="4901234567894">
+        <button id="btnLookup" class="primary">照会</button>
+      </div>
+      <div class="row">
+        <button id="btnCamera" class="ghost wide">📷 カメラで読む</button>
+      </div>
+    </div>
+
+    <div id="cameraPanel" class="card hidden">
+      <div class="video-wrap">
+        <video id="video" playsinline muted></video>
+        <div class="scan-line"></div>
+      </div>
+      <p id="camMsg" class="msg"></p>
+      <!-- カメラが2台以上ある端末（PCのIRカメラ・スマホの内外）で選び直せるようにする。
+           掴んだカメラが違うと「映っているのに一生読めない」状態になり、原因が分からない。 -->
+      <select id="camPick" class="hidden" aria-label="使うカメラ"></select>
+      <button id="btnCameraStop" class="ghost wide">閉じる</button>
+    </div>
+
+    <!-- 照会結果 → 登録フォーム -->
+    <div id="entry" class="card hidden">
+      <div id="entryBadge" class="badge"></div>
+
+      <label>商品名
+        <input id="name" type="text" autocomplete="off" placeholder="商品名">
+      </label>
+      <p id="nameNote" class="msg small"></p>
+
+      <label>属性
+        <input id="attr" type="text" autocomplete="off" placeholder="属性">
+      </label>
+      <p id="attrNote" class="msg small"></p>
+
+      <label>賞味期限
+        <input id="expiry" type="date">
+      </label>
+      <div class="quick" id="expiryQuick">
+        <button data-add="7">+1週</button>
+        <button data-add="30">+1ヶ月</button>
+        <button data-add="90">+3ヶ月</button>
+        <button data-add="180">+6ヶ月</button>
+        <button data-add="365">+1年</button>
+      </div>
+
+      <button id="btnSave" class="primary big">登録する</button>
+      <button id="btnCancel" class="ghost wide">やめる</button>
+
+      <div id="history" class="history hidden">
+        <h3>この商品の登録履歴</h3>
+        <ul id="historyList"></ul>
+      </div>
+    </div>
+
+    <div id="recent" class="card hidden">
+      <h3>このセッションで登録したもの</h3>
+      <ul id="recentList"></ul>
+    </div>
+  </div>
+
+  <!-- -------------------------------------------------- 一覧タブ -->
+  <div id="tab-list" class="tabpanel hidden">
+
+    <div class="card filters">
+      <input id="search" type="search" placeholder="商品名・属性・JANコードで絞り込み" autocomplete="off">
+      <div class="row">
+        <select id="expiryFilter">
+          <option value="dated">賞味期限が入っている行のみ</option>
+          <option value="all">すべて（期限が空の行も）</option>
+        </select>
+        <button id="btnReload" class="ghost">更新</button>
+      </div>
+      <p id="listSummary" class="msg small"></p>
+    </div>
+
+    <div class="table-wrap">
+      <table id="table">
+        <thead>
+          <tr>
+            <th class="sortable" data-key="daysLeft">期限まで</th>
+            <th class="sortable" data-key="name">商品名</th>
+            <th class="sortable" data-key="attr">属性</th>
+            <th class="sortable" data-key="expiry">賞味期限</th>
+            <th class="sortable num" data-key="row">行</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <p id="listEmpty" class="msg hidden">表示できるものがありません。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 設定ダイアログ -->
+<dialog id="settings">
+  <!-- novalidate にしているのは意図的。接続欄を隠しているときに、そこに残った値のせいで
+       ブラウザが送信を止め、ボタンが無反応になるのを避けるため。内容はJS側で見る。 -->
+  <form method="dialog" novalidate>
+    <h2>設定</h2>
+    <label>作業する人<input id="setUser" type="text" autocomplete="off"></label>
+    <div id="setConn">
+      <label>接続URL<input id="setUrl" type="url" autocomplete="off"></label>
+      <label>パスコード<input id="setPass" type="password" autocomplete="off"></label>
+    </div>
+    <p id="setConnNote" class="msg small hidden">
+      接続先とパスコードは全員共通の設定（config.js）で決めています。ここでは変えられません。
+    </p>
+    <p id="setInfo" class="msg small"></p>
+
+    <!-- 保存・人を変える は type="button" にして、押した時点で処理する。
+         dialog の close イベントを待つ形だと、Esc で閉じたときとの区別が付きにくい。
+         「人を変える」は種類の違う操作なので行を分ける（横に3つ並べると文字が折れる）。 -->
+    <button id="setSwitch" type="button" class="ghost wide">人を変える</button>
+    <menu>
+      <button value="cancel" class="ghost">閉じる</button>
+      <button id="setSave" type="button" class="primary">保存</button>
+    </menu>
+  </form>
+</dialog>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

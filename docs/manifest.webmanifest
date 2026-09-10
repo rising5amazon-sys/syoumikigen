@@ -1,0 +1,14 @@
+{
+  "name": "賞味期限管理",
+  "short_name": "賞味期限",
+  "description": "バーコードを読んで賞味期限と数量を登録し、期限が近いものを一覧で確認します。",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f5f7",
+  "theme_color": "#2563eb",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

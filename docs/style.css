@@ -1,0 +1,294 @@
+/* 賞味期限管理 — 画面のスタイル
+   現場でスマホ片手に使う前提。指で押せる大きさ（最低44px）を優先している。 */
+
+:root {
+  --bg: #f4f5f7;
+  --card: #ffffff;
+  --fg: #1b1d21;
+  --muted: #6b7280;
+  --line: #dfe3e8;
+  --accent: #2563eb;
+  --accent-fg: #ffffff;
+  --danger: #dc2626;
+  --warn: #b45309;
+  --warn-bg: #fef3c7;
+  --danger-bg: #fee2e2;
+  --ok: #15803d;
+  --radius: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14161a;
+    --card: #1d2026;
+    --fg: #e8eaed;
+    --muted: #9aa0aa;
+    --line: #2f343d;
+    --accent: #3b82f6;
+    --danger: #f87171;
+    --warn: #fbbf24;
+    --warn-bg: #3a2f10;
+    --danger-bg: #3d1b1b;
+    --ok: #4ade80;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0 0 env(safe-area-inset-bottom);
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+.hidden { display: none !important; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 18px; margin: 0 0 12px; }
+h3 { font-size: 14px; margin: 16px 0 8px; color: var(--muted); font-weight: 600; }
+
+/* ---------------------------------------------------------- 骨格 */
+
+.screen { max-width: 760px; margin: 0 auto; padding: 12px; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+
+.setup-card { margin-top: 32px; }
+
+/* 最近使った名前。スマホで1タップで選べるよう、名前そのものを大きな的にしている。
+   ✕（候補から消す）は誤爆しないよう分けて、幅も小さくしている。 */
+.who-list { display: flex; flex-direction: column; gap: 8px; margin: 12px 0 4px; }
+.who-chip { display: flex; gap: 6px; }
+.who-pick { flex: 1; min-height: 52px; font-size: 17px; text-align: left; padding: 12px 16px; }
+.who-del {
+  flex: 0 0 48px;
+  min-height: 52px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 15px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tabs { display: flex; gap: 6px; flex: 1; }
+
+.tab {
+  flex: 1;
+  padding: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--muted);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.tab.active { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+
+/* ---------------------------------------------------------- 部品 */
+
+label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 12px;
+}
+label:first-child { margin-top: 0; }
+
+input, select {
+  width: 100%;
+  margin-top: 6px;
+  padding: 12px;
+  font-size: 16px;              /* iOS で自動ズームさせないため 16px 以上を維持する */
+  font-family: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+button {
+  font: inherit;
+  font-weight: 600;
+  padding: 12px 16px;
+  min-height: 46px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--fg);
+  cursor: pointer;
+}
+button:active { transform: translateY(1px); }
+button:disabled { opacity: .5; cursor: default; }
+
+.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.ghost { background: transparent; }
+.big { width: 100%; margin-top: 16px; min-height: 54px; font-size: 17px; }
+.wide { width: 100%; margin-top: 8px; }
+.icon { padding: 10px 14px; font-size: 18px; }
+
+.row { display: flex; gap: 8px; margin-top: 8px; align-items: stretch; }
+.row > input, .row > select { margin-top: 0; }
+.row > button { white-space: nowrap; }
+
+.jan-label { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+
+#jan { font-size: 20px; letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+
+.quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.quick button { flex: 1; min-width: 70px; padding: 8px; font-size: 14px; min-height: 40px; }
+
+/* 外部のJANコードDBから取れた商品名の候補。押して初めて欄に入る（自動では入れない）。 */
+.chip {
+  display: block;
+  margin-top: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  min-height: 34px;
+  text-align: left;
+  width: auto;
+}
+
+.msg { margin: 8px 0 0; font-size: 14px; color: var(--muted); min-height: 1em; }
+.msg.error { color: var(--danger); }
+.msg.ok { color: var(--ok); }
+
+.badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  margin-bottom: 8px;
+}
+.badge.known { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.badge.new   { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+
+/* ---------------------------------------------------------- カメラ */
+
+.video-wrap {
+  position: relative;
+  background: #000;
+  border-radius: 10px;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+}
+#video { width: 100%; height: 100%; object-fit: cover; display: block; }
+#camPick { width: 100%; margin-top: 8px; }
+
+.scan-line {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 50%;
+  height: 2px;
+  background: rgba(255, 60, 60, .85);
+  box-shadow: 0 0 8px rgba(255, 60, 60, .9);
+}
+
+/* ---------------------------------------------------------- 一覧 */
+
+.filters .row { margin-top: 8px; }
+.filters select { flex: 1; }
+
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  font-size: 14px;
+}
+
+th, td {
+  padding: 10px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  vertical-align: middle;
+}
+th { background: var(--bg); font-size: 13px; color: var(--muted); position: sticky; top: 0; }
+th.sortable { cursor: pointer; user-select: none; }
+th.sortable:hover { color: var(--fg); }
+th.sorted-asc::after  { content: " ▲"; font-size: 10px; }
+th.sorted-desc::after { content: " ▼"; font-size: 10px; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+tbody tr:last-child td { border-bottom: none; }
+tr.expired  td { background: var(--danger-bg); }
+tr.soon     td { background: var(--warn-bg); }
+
+td .name { white-space: normal; min-width: 12em; display: block; }
+td .jan { display: block; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.pill {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.pill.red  { background: var(--danger); color: #fff; }
+.pill.amber{ background: var(--warn);   color: #1b1d21; }
+.pill.gray { background: transparent;   color: var(--muted); font-weight: 500; }
+
+
+.history ul, #recentList { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+.history li, #recentList li {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------- ダイアログ / トースト */
+
+dialog {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--fg);
+  padding: 20px;
+  width: min(92vw, 420px);
+}
+dialog::backdrop { background: rgba(0, 0, 0, .5); }
+dialog menu { display: flex; gap: 8px; padding: 0; margin: 12px 0 0; }
+dialog menu button { flex: 1; }
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  max-width: 90vw;
+  padding: 12px 20px;
+  border-radius: 999px;
+  background: #1b1d21;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .3);
+  z-index: 100;
+}
+.toast.error { background: var(--danger); }

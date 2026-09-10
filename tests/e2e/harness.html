@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>e2e</title>
+<pre id="out">running</pre>
+<script>
+const results = [];
+function check(label, cond, detail) {
+  results.push((cond ? 'OK   ' : 'FAIL ') + label + (cond ? '' : '  << ' + detail));
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// 接続先は config.js（テストではサーバーが返す）に入っている。
+// 端末に残った古い値がテストに混ざらないよう消してから始める。
+['smk.url', 'smk.pass', 'smk.users', 'smk.user', 'smk.cache']
+  .forEach((k) => localStorage.removeItem(k));
+
+// テストが終わるまで load イベントを止めておく（実時間で走らせるため、
+// 仮想時間だとカメラの getUserMedia が間に合わず、非同期の順序も揺れる）。
+const hold = document.createElement('img');
+hold.src = '/wait';
+document.body.appendChild(hold);
+function releaseHold() {
+  hold.src = '';
+  if (hold.parentNode) hold.parentNode.removeChild(hold);
+}
+
+/** 画面を1枚開いて、JSが動き出すまで待つ。 */
+function loadFrame(src) {
+  return new Promise((resolve, reject) => {
+    const fr = document.createElement('iframe');
+    fr.style.cssText = 'width:900px;height:700px';
+    fr.onload = () => {
+      const doc = fr.contentDocument;
+      if (doc && doc.getElementById('who')) resolve(fr);   // about:blank の分は無視
+    };
+    setTimeout(() => reject(new Error('画面が開きませんでした: ' + src)), 10000);
+    document.body.appendChild(fr);
+    fr.src = src;
+  });
+}
+
+/** 偽サーバーに直接聞く（画面が何を送ったかを確かめるため）。 */
+async function ask(action) {
+  const res = await fetch('/gas', {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action: action, pass: 'himitsu123', payload: {} })
+  });
+  return (await res.json()).data;
+}
+
+(async function main() {
+  let f, d, txt, val, fire;
+  try {
+    f = await loadFrame('/index.html');
+    d = f.contentDocument;
+    txt = (sel) => (d.querySelector(sel) ? d.querySelector(sel).textContent.trim() : '(無し)');
+    val = (id) => d.getElementById(id).value;
+    fire = (id, type) => d.getElementById(id).dispatchEvent(new f.contentWindow.Event(type));
+
+    // ---------- 起動: 聞かれるのは名前だけ ----------
+    const shown = (id) => !d.getElementById(id).classList.contains('hidden');
+
+    check('接続先が config.js にあるとき、URL・パスコードは聞かれない',
+      !shown('setup'), '接続先の入力画面が出ている');
+    check('代わりに「作業する人」を聞く',
+      shown('who') && !shown('main'), 'who=' + shown('who') + ' main=' + shown('main'));
+    check('最初は候補が無いので入力欄だけ出す',
+      !shown('whoRecent'), '候補リストが出ている');
+
+    await sleep(700);
+    check('どのシートに繋がるのかを名前を選ぶ前に見せる',
+      txt('#whoTarget').includes('テスト用スプレッドシート'), txt('#whoTarget'));
+
+    // 名前を空のまま進めない（誰が登録したか分からない行を作らないため）
+    d.getElementById('whoGo').click();
+    await sleep(200);
+    check('名前が空なら始められない',
+      shown('who') && txt('#whoMsg').includes('名前'), txt('#whoMsg'));
+
+    d.getElementById('whoName').value = '山田';
+    d.getElementById('whoGo').click();
+    await sleep(1000);
+    check('名前を入れると本体に入る', shown('main') && !shown('who'),
+      'who=' + shown('who') + ' main=' + shown('main'));
+
+    // ---------- 一覧 ----------
+    d.querySelector('.tab[data-tab="list"]').click();
+    await sleep(900);
+
+    const rows = () => Array.from(d.querySelectorAll('#tbody tr'));
+    // 列は 期限まで / 商品名+JAN / 属性 / 賞味期限 / 行
+    const cells = (tr) => Array.from(tr.children).map((td) => td.textContent.trim());
+
+    check('一覧が5件描画される', rows().length === 5, '実際: ' + rows().length);
+
+    const labels = rows().map((tr) => cells(tr)[0]);
+    check('既定で期限が近い順に並び、残日数の表示が正しい',
+      JSON.stringify(labels) === JSON.stringify(
+        ['期限切れ 3日', '今日まで', 'あと2日', 'あと7日', 'あと126日']),
+      JSON.stringify(labels));
+
+    const cls = rows().map((tr) => tr.className);
+    check('期限切れ/まもなくの行に色が付く',
+      cls[0] === 'expired' && cls[1] === 'soon' && cls[2] === 'soon' && cls[3] === 'soon',
+      JSON.stringify(cls));
+    check('1週間より先のものは強調しない（色なし）', cls[4] === '', 'class=' + cls[4]);
+
+    check('属性が列に出る',
+      cells(rows()[0])[2] === '食品' && cells(rows()[4])[2] === '駄菓子',
+      JSON.stringify(rows().map((tr) => cells(tr)[2])));
+
+    check('DBシートに無い JAN はそう分かるように出る',
+      rows().some((tr) => cells(tr)[1].includes('DB未登録')),
+      JSON.stringify(rows().map((tr) => cells(tr)[1])));
+
+    check('一覧は読み取り専用（行に操作ボタンを置かない）',
+      d.querySelectorAll('#tbody button').length === 0,
+      'ボタン数=' + d.querySelectorAll('#tbody button').length);
+
+    // ---------- XSS ----------
+    const tbody = d.getElementById('tbody');
+    check('商品名のHTMLが実行されない（要素にならず文字として出る）',
+      tbody.querySelectorAll('img').length === 0 &&
+      tbody.textContent.includes('<img src=x onerror=alert(1)>ハム'),
+      'img数=' + tbody.querySelectorAll('img').length);
+
+    // ---------- 集計 ----------
+    check('集計が出る（期限切れ1件・7日以内3件）',
+      txt('#listSummary').includes('期限切れ 1件') && txt('#listSummary').includes('7日以内 3件'),
+      txt('#listSummary'));
+    check('賞味期限が空の行があることを知らせる',
+      txt('#listSummary').includes('賞味期限が空の 2行'), txt('#listSummary'));
+
+    // ---------- 期限が空の行を含める ----------
+    d.getElementById('expiryFilter').value = 'all';
+    fire('expiryFilter', 'change');
+    await sleep(900);
+
+    check('「すべて」にすると期限が空の行も出る', rows().length === 7, '実際: ' + rows().length);
+    check('賞味期限が無いものは末尾に置かれる',
+      cells(rows()[6])[3] === '—', '末尾: ' + JSON.stringify(cells(rows()[6])));
+    // JS では null >= 0 が true になるので、書かないと期限が空の行が「期限間近」に混ざる
+    check('賞味期限が空の行を「あと7日以内」に数えない',
+      txt('#listSummary').includes('期限切れ 1件') && txt('#listSummary').includes('7日以内 3件'),
+      txt('#listSummary'));
+
+    d.getElementById('expiryFilter').value = 'dated';
+    fire('expiryFilter', 'change');
+    await sleep(900);
+
+    // ---------- ソート ----------
+    d.querySelector('th[data-key="name"]').click();
+    await sleep(150);
+    const names1 = rows().map((tr) => cells(tr)[1].split('JAN')[0].trim());
+    d.querySelector('th[data-key="name"]').click();
+    await sleep(150);
+    const names2 = rows().map((tr) => cells(tr)[1].split('JAN')[0].trim());
+    check('商品名でソートでき、もう一度押すと逆順になる',
+      JSON.stringify(names1) === JSON.stringify(names2.slice().reverse()) && names1[0] !== names2[0],
+      JSON.stringify(names1) + ' / ' + JSON.stringify(names2));
+
+    d.querySelector('th[data-key="row"]').click();
+    await sleep(150);
+    const rowNos = rows().map((tr) => Number(cells(tr)[4]));
+    check('行番号は数値として並ぶ（文字列比較にならない）',
+      JSON.stringify(rowNos) === JSON.stringify(rowNos.slice().sort((a, b) => a - b)),
+      JSON.stringify(rowNos));
+
+    // ---------- 絞り込み ----------
+    const search = (q) => {
+      d.getElementById('search').value = q;
+      fire('search', 'input');
+      return sleep(150);
+    };
+
+    await search('豆腐');
+    check('商品名で絞り込める', rows().length === 1 && cells(rows()[0])[1].includes('絹ごし豆腐'),
+      '件数: ' + rows().length);
+
+    await search('4901005');
+    check('JANコードでも絞り込める', rows().length === 1 && cells(rows()[0])[1].includes('カップヌードル'),
+      '件数: ' + rows().length);
+
+    await search('駄菓子');
+    check('属性でも絞り込める', rows().length === 1 && cells(rows()[0])[2] === '駄菓子',
+      '件数: ' + rows().length);
+
+    await search('');
+
+    // ---------- 登録タブ: DBシートにある JAN ----------
+    d.querySelector('.tab[data-tab="scan"]').click();
+    await sleep(100);
+    d.getElementById('jan').value = '4901-777-018888';
+    d.getElementById('btnLookup').click();
+    await sleep(900);
+
+    check('照会するとJANが数字だけに正規化される', val('jan') === '4901777018888', val('jan'));
+    check('照会結果の入力欄が出る', !d.getElementById('entry').classList.contains('hidden'), 'entry が隠れたまま');
+    check('商品名が入る', val('name') === 'テスト商品 500ml', val('name'));
+    check('属性が入る', val('attr') === '食品', val('attr'));
+    check('DB登録済みバッジが出る', txt('#entryBadge') === 'DBに登録済みの商品', txt('#entryBadge'));
+    check('過去の登録履歴が出る', !d.getElementById('history').classList.contains('hidden'), 'history が隠れたまま');
+
+    // 賞味期限のクイックボタン
+    d.querySelector('#expiryQuick button[data-add="90"]').click();
+    const exp = val('expiry');
+    const want = new Date(); want.setDate(want.getDate() + 90);
+    const p = (n) => (n < 10 ? '0' : '') + n;
+    check('「+3ヶ月」で賞味期限が入る',
+      exp === want.getFullYear() + '-' + p(want.getMonth() + 1) + '-' + p(want.getDate()), exp);
+
+    // 未入力での保存はサーバーに送らない
+    d.getElementById('expiry').value = '';
+    d.getElementById('btnSave').click();
+    await sleep(200);
+    check('賞味期限が空なら登録を止める', txt('#toast').includes('賞味期限'), txt('#toast'));
+
+    // ---------- 登録タブ: DBシートに無い JAN ----------
+    d.getElementById('jan').value = '4909999999999';
+    d.getElementById('btnLookup').click();
+    await sleep(900);
+
+    check('DBに無い商品はそう分かるバッジが出る', txt('#entryBadge') === 'DBに無い商品です', txt('#entryBadge'));
+    check('商品名欄は空のまま', val('name') === '', val('name'));
+    check('商品名欄に「商品名を入力」と出る',
+      d.getElementById('name').placeholder === '商品名を入力', d.getElementById('name').placeholder);
+    check('属性欄に「属性を入力」と出る',
+      d.getElementById('attr').placeholder === '属性を入力', d.getElementById('attr').placeholder);
+
+    // 外部DBの候補は自動では入れない（通販サイトの名前は実物と違うことがある）
+    const chip = d.querySelector('#nameNote .chip');
+    check('外部DBの候補はボタンとして出るだけで、勝手に入らない',
+      !!chip && val('name') === '', chip ? 'name=' + val('name') : '候補ボタンが無い');
+    if (chip) {
+      chip.click();
+      check('候補ボタンを押すと商品名に入る', val('name') === '外部DBの候補 300g', val('name'));
+    }
+
+    // 新規商品は属性が必須（DBシートに載る値なので空で通さない）
+    d.getElementById('attr').value = '';
+    d.getElementById('expiry').value = '2026-12-01';
+    d.getElementById('btnSave').click();
+    await sleep(300);
+    check('新規商品で属性が空なら登録を止める', txt('#toast').includes('属性'), txt('#toast'));
+
+    // ---------- 登録の送信内容 ----------
+    d.getElementById('attr').value = '日用品';
+    d.getElementById('btnSave').click();
+    await sleep(700);
+
+    const sent = await ask('_lastAdd');
+    check('JAN・商品名・属性・賞味期限をまとめて送る',
+      sent.jan === '4909999999999' && sent.name === '外部DBの候補 300g'
+      && sent.attr === '日用品' && sent.expiry === '2026-12-01',
+      JSON.stringify(sent));
+    check('数量は送らない（登録シートに数量の列が無い）',
+      sent.qty === undefined, JSON.stringify(sent));
+    check('登録するとDBシートにも追加されたことが分かる',
+      txt('#toast').includes('DBシートにも追加'), txt('#toast'));
+    check('登録後は入力欄が閉じ、次のJANを待つ',
+      d.getElementById('entry').classList.contains('hidden') && val('jan') === '',
+      'entry=' + d.getElementById('entry').className + ' jan=' + val('jan'));
+    check('このセッションで登録したものが残る',
+      txt('#recentList').includes('日用品'), txt('#recentList'));
+    check('登録した人の名前が一緒に送られる', sent.user === '山田', JSON.stringify(sent));
+
+    // ---------- カメラ ----------
+    // 偽のカメラなので読み取れるかは分からない。ここで見るのは
+    // 「起動して、何で読んでいるかを画面に出し、止められる」ところまで。
+    d.getElementById('btnCamera').click();
+    await sleep(3000);
+
+    const video = d.getElementById('video');
+    check('カメラのパネルが開く',
+      !d.getElementById('cameraPanel').classList.contains('hidden'), 'パネルが出ない');
+    check('カメラの映像が流れる',
+      !!video.srcObject && video.videoWidth > 0,
+      'srcObject=' + !!video.srcObject + ' w=' + video.videoWidth);
+    check('何で読んでいるかを画面に出す（黙って読めないままにしない）',
+      /ZXing|端末の読み取り/.test(txt('#camMsg')) && txt('#camMsg').includes('×'),
+      txt('#camMsg'));
+    // CDN から読むと、社内プロキシで落ちたときに原因が分からない形で読めなくなる。
+    const outside = Array.from(d.querySelectorAll('script'))
+      .map((s) => s.src).filter((src) => src && src.indexOf(location.origin) !== 0);
+    check('読み取りライブラリを外部から取ってこない（同梱を使う）',
+      outside.length === 0, JSON.stringify(outside));
+
+    d.getElementById('btnCameraStop').click();
+    await sleep(300);
+    check('閉じるとカメラを離す',
+      d.getElementById('cameraPanel').classList.contains('hidden') && !video.srcObject,
+      'srcObject=' + !!video.srcObject);
+
+    // ---------- 設定ダイアログ ----------
+    d.getElementById('openSettings').click();
+    await sleep(300);
+    check('接続先が config.js で決まっているときは設定から変えられない',
+      d.getElementById('setConn').classList.contains('hidden') &&
+      !d.getElementById('setConnNote').classList.contains('hidden'),
+      'setConn=' + d.getElementById('setConn').className);
+    check('設定には今の作業者が入っている', val('setUser') === '山田', val('setUser'));
+
+    // 隠してある接続欄に不正な値が残っていても、保存ボタンが無反応にならないこと
+    const dlg = d.getElementById('settings');
+    d.getElementById('setUser').value = '佐藤';
+    d.getElementById('setSave').click();
+    await sleep(400);
+    check('設定の保存ボタンが効く（隠れた入力欄に邪魔されない）',
+      txt('#toast').includes('保存') &&
+      JSON.parse(localStorage.getItem('smk.users') || '[]').includes('佐藤'),
+      'open=' + dlg.open + ' / ' + txt('#toast') + ' / ' + localStorage.getItem('smk.users'));
+
+    d.getElementById('openSettings').click();
+    await sleep(300);
+    d.getElementById('setSwitch').click();
+    await sleep(300);
+    check('「人を変える」でまた名前を聞く画面に戻る',
+      !d.getElementById('who').classList.contains('hidden'),
+      'open=' + dlg.open + ' who=' + d.getElementById('who').className);
+
+    // ---------- 開き直したとき ----------
+    const f2 = await loadFrame('/index.html');
+    const d2 = f2.contentDocument;
+    await sleep(400);
+    check('開き直すと本体には入らず、また名前を聞く',
+      !d2.getElementById('who').classList.contains('hidden') &&
+      d2.getElementById('main').classList.contains('hidden'),
+      'who/main の表示状態が違う');
+
+    const picks = Array.from(d2.querySelectorAll('#whoRecent .who-pick')).map((b) => b.textContent);
+    check('一度使った名前が候補ボタンとして出る',
+      picks.includes('山田') && picks.includes('佐藤'), JSON.stringify(picks));
+    check('候補は最近使った順に並ぶ', picks[0] === '佐藤', JSON.stringify(picks));
+    const pick = d2.querySelector('#whoRecent .who-pick');
+
+    if (pick) {
+      pick.click();
+      await sleep(1000);
+      check('候補ボタンを押すだけで始められる',
+        !d2.getElementById('main').classList.contains('hidden'), 'main が出ない');
+    }
+
+    // ---------- 候補を消す ----------
+    const f3 = await loadFrame('/index.html');
+    const d3 = f3.contentDocument;
+    await sleep(400);
+    const chips = () => Array.from(d3.querySelectorAll('#whoRecent .who-pick'))
+      .map((b) => b.textContent);
+    const before = chips();
+    const del = d3.querySelector('#whoRecent .who-del');
+    check('候補には消すボタンが付く', !!del, '消すボタンが無い');
+    if (del) {
+      del.click();
+      await sleep(200);
+      const after = chips();
+      check('候補を消せる',
+        after.length === before.length - 1 && !after.includes(before[0]) &&
+        !JSON.parse(localStorage.getItem('smk.users') || '[]').includes(before[0]),
+        JSON.stringify(before) + ' → ' + JSON.stringify(after));
+    }
+
+    // ---------- config.js が空のとき ----------
+    const f4 = await loadFrame('/empty/index.html');
+    const d4 = f4.contentDocument;
+    await sleep(400);
+    check('config.js が空なら接続先の入力画面に落ちる',
+      !d4.getElementById('setup').classList.contains('hidden') &&
+      d4.getElementById('who').classList.contains('hidden'),
+      'setup/who の表示状態が違う');
+
+  } catch (e) {
+    results.push('FAIL 例外: ' + e.message + '\n' + e.stack);
+  }
+
+  const failed = results.filter((r) => r.startsWith('FAIL')).length;
+  document.getElementById('out').textContent =
+    results.join('\n') + '\n\n=== ' + (results.length - failed) + ' 件成功 / ' + failed + ' 件失敗 ===';
+  releaseHold();
+})();
+</script>
