@@ -1,0 +1,15 @@
+{
+  "name": "syoumikigenkanri",
+  "version": "1.0.0",
+  "description": "バーコードで賞味期限を登録し、期限が近いものを Slack に通知する。DBはGoogleスプレッドシート。",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/gas.test.mjs && node tests/notify.test.mjs",
+    "test:gas": "node tests/gas.test.mjs",
+    "test:notify": "node tests/notify.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
