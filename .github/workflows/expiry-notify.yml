@@ -1,0 +1,76 @@
+name: 賞味期限チェック → Slack通知
+
+on:
+  schedule:
+    # GitHub Actions の cron は UTC。00:00 UTC = 同日 09:00 JST。
+    # なお schedule は混雑時に数分〜数十分ずれることがある（GitHub の仕様）。分単位の精度は期待しない。
+    - cron: '0 0 * * *'
+
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Slackに送らず内容だけ確認する（外部に送る操作は既定でOFF）'
+        type: boolean
+        default: true
+      days:
+        description: '通知する日をカンマ区切りで（例 7,3,1）。空ならスプレッドシートの設定に従う'
+        type: string
+        default: ''
+      notify_when_empty:
+        description: '対象0件でも「異常なし」を送る'
+        type: boolean
+        default: false
+      mention:
+        description: 'メンションを一時的に変える（channel / here / メンバーID）。空なら Variables の SLACK_MENTION に従う'
+        type: string
+        default: ''
+
+concurrency:
+  group: expiry-notify
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 設定を確認する
+        env:
+          GAS_URL: ${{ secrets.GAS_URL }}
+          GAS_PASSCODE: ${{ secrets.GAS_PASSCODE }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          missing=""
+          [ -z "$GAS_URL" ] && missing="$missing GAS_URL"
+          [ -z "$GAS_PASSCODE" ] && missing="$missing GAS_PASSCODE"
+          [ -z "$SLACK_WEBHOOK_URL" ] && missing="$missing SLACK_WEBHOOK_URL"
+          if [ -n "$missing" ]; then
+            echo "::error::Secrets が未設定です:$missing  (Settings > Secrets and variables > Actions)"
+            exit 1
+          fi
+          echo "Secrets は揃っています。"
+
+      - name: 期限を確認して通知する
+        env:
+          GAS_URL: ${{ secrets.GAS_URL }}
+          GAS_PASSCODE: ${{ secrets.GAS_PASSCODE }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          APP_URL: ${{ vars.APP_URL }}
+          NOTIFY_DAYS: ${{ inputs.days }}
+          # 定期実行は必ず送る。手動実行のときだけ既定を DRY-RUN にする。
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          NOTIFY_WHEN_EMPTY: ${{ inputs.notify_when_empty || vars.NOTIFY_WHEN_EMPTY }}
+          # 通知の先頭に付けるメンション。認証情報ではないので Variables に置く（誰でも見て直せる）。
+          # 空ならメンションしない。対象0件のときはこの設定にかかわらず付けない。
+          SLACK_MENTION: ${{ inputs.mention || vars.SLACK_MENTION }}
+        run: node .github/scripts/notify.mjs
