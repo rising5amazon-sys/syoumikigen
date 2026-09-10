@@ -177,6 +177,53 @@ server.listen(0, '127.0.0.1', async () => {
     assert.ok(JSON.stringify(slackPosts[0].blocks).includes('https://example.com/app/'));
   });
 
+  await test('SLACK_MENTION=channel ならチャンネル全員を呼ぶ', async () => {
+    await run({ ...base, GAS_URL: gas(), DRY_RUN: 'false', SLACK_MENTION: 'channel' });
+    assert.strictEqual(slackPosts.length, 1);
+    const secs = slackPosts[0].blocks.filter((x) => x.type === 'section').map((x) => x.text.text);
+    assert.ok(secs.includes('<!channel>'), 'メンションのブロックが無い: ' + JSON.stringify(secs.slice(0, 3)));
+    // 通知プレビュー（blocks を展開しない画面）にも出さないと、誰が呼ばれたか分からない
+    assert.ok(slackPosts[0].text.startsWith('<!channel> '), slackPosts[0].text);
+  });
+
+  await test('メンションは本文の先頭に出る（中身より先に目に入る）', async () => {
+    await run({ ...base, GAS_URL: gas(), DRY_RUN: 'false', SLACK_MENTION: 'here' });
+    const b = slackPosts[0].blocks;
+    const mention = b.findIndex((x) => x.type === 'section' && x.text.text === '<!here>');
+    const first = b.findIndex((x) => x.type === 'section' && x.text.text.includes('期限切れ'));
+    assert.ok(mention >= 0, 'メンションが無い');
+    assert.ok(mention < first, 'メンションが本文より後ろにある');
+  });
+
+  await test('対象0件のときはメンションしない（毎朝の異常なしで全員を呼ばない）', async () => {
+    await run({ ...base, GAS_URL: gas('?empty=1'), DRY_RUN: 'false', NOTIFY_WHEN_EMPTY: 'true', SLACK_MENTION: 'channel' });
+    assert.strictEqual(slackPosts.length, 1, '異常なしの通知そのものは送る');
+    const all = JSON.stringify(slackPosts[0]);
+    assert.ok(!all.includes('<!channel>'), '0件なのに全員を呼んでいる: ' + all.slice(0, 300));
+  });
+
+  await test('メンバーIDをカンマ区切りで複数指定できる', async () => {
+    await run({ ...base, GAS_URL: gas(), DRY_RUN: 'false', SLACK_MENTION: 'U01ABCDEFG, U02XYZ1234' });
+    const secs = slackPosts[0].blocks.filter((x) => x.type === 'section').map((x) => x.text.text);
+    assert.ok(secs.includes('<@U01ABCDEFG> <@U02XYZ1234>'), JSON.stringify(secs.slice(0, 3)));
+  });
+
+  await test('使えない指定は当てずっぽうで送らず、理由を出す', async () => {
+    const r = await run({ ...base, GAS_URL: gas(), DRY_RUN: 'false', SLACK_MENTION: '@yamada, channel' });
+    assert.strictEqual(r.code, 0, '1つ駄目でも通知そのものは止めない');
+    const all = JSON.stringify(slackPosts[0]);
+    assert.ok(all.includes('<!channel>'), '使える方は生きているべき');
+    assert.ok(!all.includes('yamada'), '解決できない名前を本文に混ぜている');
+    assert.ok(r.stdout.includes('使いませんでした'), '無視したことが実行ログに出ていない: ' + r.stdout.slice(-300));
+  });
+
+  await test('SLACK_MENTION が空ならメンションしない（今までどおり）', async () => {
+    await run({ ...base, GAS_URL: gas(), DRY_RUN: 'false', SLACK_MENTION: '' });
+    const all = JSON.stringify(slackPosts[0]);
+    assert.ok(!all.includes('<!'), '勝手にメンションが付いている');
+    assert.ok(!slackPosts[0].text.startsWith('<'), slackPosts[0].text);
+  });
+
   console.log('\n--- 失敗のしかた ---');
 
   await test('パスコードが違えば異常終了する', async () => {
