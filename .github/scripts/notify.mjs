@@ -272,16 +272,6 @@ async function main() {
 main().catch((err) => {
   console.error(err.message);
   if (env.GITHUB_STEP_SUMMARY) {
-    appendFileSync(err.message ? `\n:x: 失敗: ${err.message}\n` : '');
-  }
-  process.exit(1);
-});
-
-⚠️ 最後の3行だけ、上のコードブロックが壊れている。 貼ったあと、末尾を手で直して：
-
-main().catch((err) => {
-  console.error(err.message);
-  if (env.GITHUB_STEP_SUMMARY) {
     appendFileSync(env.GITHUB_STEP_SUMMARY, `\n:x: 失敗: ${err.message}\n`);
   }
   process.exit(1);
