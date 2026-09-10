@@ -1,0 +1,32 @@
+name: テスト
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # 外部サービスには一切繋がない。GAS と Slack は偽サーバーに差し替えて動かしている。
+      - run: npm test
+
+      - name: 画面のJSに構文エラーが無いか
+        run: |
+          node --check docs/app.js
+          for f in gas/*.gs; do
+            cp "$f" "/tmp/$(basename "$f" .gs).js"
+            node --check "/tmp/$(basename "$f" .gs).js"
+          done
+          echo "構文チェック OK"
